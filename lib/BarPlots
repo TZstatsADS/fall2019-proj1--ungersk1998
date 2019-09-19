@@ -1,0 +1,7 @@
+Function: BarPlots(Cond_Probs)
+
+Inputs: 
+- Cond_Probs ... list returned by CondProbs function
+
+Description:
+- BarPlots plots the "Joint Conditional Probs" from the return of the CondProbs function to visualize the probability of a song being in a certain genre given it contains the given words.

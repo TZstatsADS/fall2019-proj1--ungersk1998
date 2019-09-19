@@ -1,0 +1,8 @@
+Function: CondProbs(Raw_Counts)
+
+Inputs: 
+- Raw_Counts ... list returned by RawCounts function
+
+Description:
+- CondProbs uses "Independent Counts", "Joint Counts", and "Number of Songs by Genre" from the return of the RawCounts function to calculate joint conditional probability of a song being in a genre given that it contains RawCounts input words_of_interest. Returns 
+"Individual Conditional Probs", "Joint Conditional Probs", and "Number of Songs by Genre".

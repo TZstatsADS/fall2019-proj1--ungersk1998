@@ -1,0 +1,327 @@
+---
+title: "Project 1: Conditioning Our Expectations"
+author: "Sam Unger"
+date: "September 19, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### This report investigates some of the song lyrics that really set genres apart from one another.
+
+Here, we process the raw textual data for our data analysis.
+(Feel free to skip down to where we load the processed data!)
+
+"lyrics.csv" is a filtered corpus of 380,000+ song lyrics from from MetroLyrics. You can read more about it on [Kaggle](https://www.kaggle.com/gyani95/380000-lyrics-from-metrolyrics).
+
+"artists.csv" provides the background information of all the artists. These information are scraped from [LyricsFreak](https://www.lyricsfreak.com/).
+
+
+### Step 0 - Load all the required libraries
+
+From the packages' descriptions:
+
++ `tm` is a framework for text mining applications within R;
++ `data.table` is a package for fast aggregation of large data
++ `tidytext` allows text mining using 'dplyr', 'ggplot2', and other tidy tools;
++ `tidyverse` is an opinionated collection of R packages designed for data science. All packages share an underlying design philosophy, grammar, and data structures;
++ `DT` provides an R interface to the JavaScript library DataTables.
+
+
+```{r load libraries, warning=FALSE, message=FALSE}
+library(tm)
+library(data.table)
+library(tidytext)
+library(tidyverse)
+library(DT)
+```
+
+### Step 1 - Load the data to be cleaned and processed
+
+```{r}
+# load lyrics data
+load('../data/lyrics.RData') 
+```
+
+
+### Step 2 - Preliminary cleaning of text
+
+We clean the text by converting all the letters to the lower case, and removing punctuation, numbers, empty words and extra white space.
+
+```{r text processing in tm}
+# Long runtime here! ~30-40 minutes to stem
+# function for removimg leading and trailing whitespace from character strings 
+leadingWhitespace <- content_transformer(function(x) str_trim(x, side = "both"))
+# remove stop words
+data("stop_words")
+word <- c("lot", "today", "months", "month", "wanna", "wouldnt", "wasnt", "ha", "na", "ooh", "da",
+        "gonna", "im", "dont", "aint", "wont", "yeah", "la", "oi", "nigga", "fuck",
+          "hey", "year", "years", "last", "past", "feel")
+stop_words <- c(stop_words$word, word)
+# clean the data and make a corpus
+corpus <- VCorpus(VectorSource(dt_lyrics$lyrics))%>%
+  tm_map(content_transformer(tolower))%>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeWords, character(0))%>%
+  tm_map(removeWords, stop_words)%>%
+  tm_map(removeNumbers)%>%
+  tm_map(stripWhitespace)%>%
+  tm_map(leadingWhitespace)
+```
+
+
+### Step 3 - Stemming words and converting tm object to tidy object
+
+Stemming reduces a word to its word *stem*. We stem the words here and then convert the "tm" object to a "tidy" object for much faster processing.
+
+```{r stemming}
+stemmed <- tm_map(corpus, stemDocument) %>%
+  tidy() %>%
+  select(text)
+```
+
+### Step 4 - Creating tidy format of the dictionary to be used for completing stems
+
+We also need a dictionary to look up the words corresponding to the stems.
+
+```{r tidy dictionary}
+dict <- tidy(corpus) %>%
+  select(text) %>%
+  unnest_tokens(dictionary, text)
+```
+
+### Step 5 - Combining stems and dictionary into the same tibble
+
+Here we combine the stems and the dictionary into the same "tidy" object.
+
+```{r tidy stems with dictionary}
+completed <- stemmed %>%
+  mutate(id = row_number()) %>%
+  unnest_tokens(stems, text) %>%
+  bind_cols(dict) 
+```
+
+### Step 6 - Stem completion
+
+Lastly, we complete the stems by picking the corresponding word with the highest frequency.
+
+```{r stem completion, warning=FALSE, message=FALSE}
+completed <- completed %>%
+  group_by(stems) %>%
+  count(dictionary) %>%
+  mutate(word = dictionary[which.max(n)]) %>%
+  ungroup() %>%
+  select(stems, word) %>%
+  distinct() %>%
+  right_join(completed) %>%
+  select(-stems)
+```
+
+### Step 7 - Pasting stem completed individual words into their respective lyrics
+
+We want our processed words to resemble the structure of the original lyrics. So we paste the words together to form processed lyrics.
+
+```{r reverse unnest}
+completed <- completed %>%
+  group_by(id) %>%
+  summarise(stemmedwords= str_c(word, collapse = " ")) %>%
+  ungroup()
+```
+
+### Step 8 - Keeping a track of the processed lyrics with their own ID
+
+```{r cleaned hm_data, warning=FALSE, message=FALSE}
+dt_lyrics <- dt_lyrics %>%
+  mutate(id = row_number()) %>%
+  inner_join(completed)
+```
+
+### Exporting the processed text data into a CSV file
+
+```{r export data}
+save(dt_lyrics, file="../output/processed_lyrics.RData")
+```
+
+The final processed data is ready to be used for any kind of analysis.
+
+---
+
+Now we can use some functions I've coded up (see lib folder for details) to measure word popularity across genres and even calculate some conditional probabilities!
+
+
+## Idea:
+
+What are the some of the most unique words in each genre? How few words do we need to specify a genre with high certainty?
+
+
+The provided starter Shiny code showed us the most *popular* words in each genre. I, for one, was kind of disappointed with the results, because they were all so similar! In my head, although I didn't realize it at first, what I was hoping to see were the words most *unique* to each genre. So that's what I tried to figure out with this project.
+
+
+```{r Load Processed Lyrics Data}
+load('../output/processed_lyrics.RData')
+```
+
+The Shiny code example's most frequent words in each genre were a good place to start. But for this project, we want to be more careful, by seeing the words that don't just appear frequently in a genre, but in the most songs of that genre; and, in particular, as few appearances in other genres as possible.  
+
+---
+
+### Function 1: The Filter
+
+```{r The Word Filter Function}
+
+# filter_by_word takes in a df and word and returns only the parts of the df
+# which correspond to the stemmedwords column with the word in it
+
+filter_by_word <- function(df,word){
+  matches <- grep(pattern=word,df$stemmedwords)
+  return(df[matches,])
+}
+```
+
+
+Now that we have our filter, we can starting counting all these songs with particular words in them!
+
+---
+
+### Function 2: The Counter
+
+```{r The Counting Function}
+
+# RawCounts counts number of songs in each genre which contain given word
+# For multiple words, RawCounts tracks each word's counts as well as joint counts
+
+RawCounts <- function(words_of_interest){
+  # useful initial values
+  WoI <- words_of_interest
+  num_WoI <- length(WoI)
+  num_songs_by_genre <- summary(factor(dt_lyrics$genre))
+  genres <- names(num_songs_by_genre)
+  num_genres <- length(genres)
+  
+  # start with all songs
+  lyrics_by_genre <- split(dt_lyrics,f=dt_lyrics$genre) # doesn't change in loop
+  matches_by_genre <- lyrics_by_genre # filters successively by matched WoI in loop
+  
+  # initiate storage variables for counts tracked in loop
+  WoI_ct_by_genre <- matrix(NA,ncol=num_genres,nrow = num_WoI) # counts for each WoI
+  colnames(WoI_ct_by_genre) <- genres ; rownames(WoI_ct_by_genre) <- WoI
+  joint_ct_by_genre <- matrix(NA,ncol=num_genres,nrow = num_WoI) # joint counts
+  colnames(joint_ct_by_genre) <- genres ; rownames(joint_ct_by_genre) <- WoI
+  
+  # loop; fills two matrices with song counts corresponding to word matching
+  for (W in WoI){
+    temp_matches_by_genre <- sapply(lyrics_by_genre,filter_by_word,word=W,simplify=F)
+    matches_by_genre <- sapply(matches_by_genre, filter_by_word,word=W,simplify=F)
+    WoI_ct_by_genre[W,] <- sapply(temp_matches_by_genre,nrow,USE.NAMES = F)
+    joint_ct_by_genre[W,] <- sapply(matches_by_genre,nrow,USE.NAMES = F)
+  }
+  
+  return(list("Individual Counts"=WoI_ct_by_genre,"Joint Counts"=joint_ct_by_genre,
+              "Number of Songs by Genre"=num_songs_by_genre))
+}
+```
+
+---
+
+### Function 3: The Probabiliter
+
+```{r The Conditional Probabilities Function}
+
+# Probabilities conditioned on genre!
+
+CondProbs <- function(Raw_Counts){
+  # Extract data from RawCounts function output
+  individual_counts <- Raw_Counts$"Individual Counts"
+  joint_counts <- Raw_Counts$"Joint Counts"
+  num_songs_by_genre <- Raw_Counts$"Number of Songs by Genre"
+  
+  # Divide words' song counts by genres' song counts to standardize (per song rate)
+  word_rates_by_genre <- individual_counts / num_songs_by_genre
+  joint_rates_by_genre <- joint_counts / num_songs_by_genre
+  
+  
+  # Important: P(genre|word)
+  prob_genre_by_word <- word_rates_by_genre / rowSums(word_rates_by_genre)
+  joint_prob_genre_by_word <- joint_rates_by_genre / rowSums(joint_rates_by_genre)
+  
+  return(list("Individual Conditional Probs"=prob_genre_by_word,
+              "Joint Conditional Probs"=joint_prob_genre_by_word,
+              "Number of Songs by Genre"=num_songs_by_genre))
+}
+```
+
+---
+
+### Function 4: The Plotter
+
+```{r The Plotting Function}
+
+# Plots joint conditional probabilities from CondProbs
+
+BarPlots <- function(Cond_Probs){
+  # Take in joint conditional probabilites from CondProbs
+  joint_cond_probs  <- Cond_Probs$"Joint Conditional Probs"
+  
+  # Retrieve info for sorting and labeling
+  words <- rownames(joint_cond_probs)
+  num_words <- length(words)
+  last_word <- words[num_words]
+  topfive <- order(joint_cond_probs[last_word,],decreasing = T)[1:5]
+  
+  # Plot
+  barplot(joint_cond_probs[last_word,topfive],
+          main = paste(words,sep = ','),
+          ylab = "P(Genre|Words)",
+          ylim = c(0,1),
+          col = c("blue","green","red")[num_words%%3+1]) # color variation
+}
+```
+
+---
+
+### See it all work!
+
+```{r Demo 1}
+demo1words <- c("shotgun","whiskey")
+demo1rawcounts <- RawCounts(demo1words)
+demo1condprobs <- CondProbs(demo1rawcounts)
+BarPlots(demo1condprobs)
+```
+
+---
+
+```{r Demo 2}
+demo2words <- c("death","dark")
+demo2rawcounts <- RawCounts(demo2words)
+demo2condprobs <- CondProbs(demo2rawcounts)
+BarPlots(demo2condprobs)
+```
+
+---
+
+```{r Demo 3}
+demo3words <- c("parent","hate")
+demo3rawcounts <- RawCounts(demo3words)
+demo3condprobs <- CondProbs(demo3rawcounts)
+BarPlots(demo3condprobs)
+```
+
+---
+
+```{r Demo 4}
+demo4words <- c("south","truck","girl")
+demo4rawcounts <- RawCounts(demo4words)
+demo4condprobs <- CondProbs(demo4rawcounts)
+BarPlots(demo4condprobs)
+```
+
+---
+
+```{r Demo 5}
+demo5words <- c("crazy","love","space")
+demo5rawcounts <- RawCounts(demo5words)
+demo5condprobs <- CondProbs(demo5rawcounts)
+BarPlots(demo5condprobs)
+```

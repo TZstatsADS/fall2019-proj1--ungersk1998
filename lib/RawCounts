@@ -1,0 +1,8 @@
+Function: RawCounts(words_of_interest)
+
+Inputs: 
+- words_of_interest ... a vector of words which will be searched for in the lyrics data
+
+Description:
+- RawCounts counts number of songs in each genre which contain given word. 
+For multiple words, RawCounts tracks each word's counts as well as joint counts. Returns a list of the two count matrices "Individual Counts" and "Joint Counts" along with the named number "Number of Songs by Genre".

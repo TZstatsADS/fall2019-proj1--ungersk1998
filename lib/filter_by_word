@@ -1,0 +1,8 @@
+Function: filter_by_word(df,word)
+
+Inputs: 
+- df ... a dataframe with a column named "stemmedwords"
+- word ... a character string to be searched for in df$stemmedwords
+
+Description:
+- filter_by__word(df,word) uses grep() to find rows of df with stemmedwords that include word input, then returns df subset by those rows

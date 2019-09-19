@@ -2,5 +2,4 @@
 
 ### Output folder
 
-The output directory contains analysis output, processed datasets, logs, or other processed things.
-
+The output directory contains the "processed_lyrics.RData" data and the "computations.RData" workspace image, which includes info for all demos at end of rmd file.
