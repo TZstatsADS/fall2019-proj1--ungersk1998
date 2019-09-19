@@ -1,6 +1,6 @@
 # Applied Data Science @ Columbia
 ## Fall 2019
-## Project 1: A "data story" on the songs of our times
+## Project 1: Conditioning Our Expectations
 
 <img src="figs/crazylovespace.png" width="500">
 
